@@ -1,4 +1,4 @@
-# Flying Cup - Preview Deployment PaaS
+# Flying Cup - Preview Deployment PaaS (On Progress)
 
 An open-source, self-hostable service that automatically creates deployment previews for Pull Requests on GitHub.
 
