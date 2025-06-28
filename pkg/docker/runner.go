@@ -100,3 +100,35 @@ func (d *DockerRunner) RemoveContainerIfExists(ctx context.Context, app *sharedT
 
 	return nil
 }
+
+// GetContainerHostPort retrieves the host port from running container
+func (d *DockerRunner) GetContainerHostPort(ctx context.Context, containerName string) (string, error) {
+	containers, err := d.Client.ContainerList(ctx, container.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	for _, container := range containers {
+		for _, name := range container.Names {
+			if name == "/"+containerName {
+				// Get container details to see port bindings
+				containerInfo, err := d.Client.ContainerInspect(ctx, container.ID)
+				if err != nil {
+					return "", fmt.Errorf("failed to inspect container: %w", err)
+				}
+
+				// Check port bindings
+				for containerPort, bindings := range containerInfo.NetworkSettings.Ports {
+					if len(bindings) > 0 {
+						fmt.Printf("Found port binding: %s -> %s\n", containerPort, bindings[0].HostPort)
+						return bindings[0].HostPort, nil
+					}
+				}
+
+				return "", fmt.Errorf("no port bindings found for container")
+			}
+		}
+	}
+
+	return "", fmt.Errorf("container not found: %s", containerName)
+}

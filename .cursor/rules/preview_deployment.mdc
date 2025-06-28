@@ -8,7 +8,7 @@ Project Guide: Deployment Preview Controller (Auto-Preview PaaS)
 This document serves as the primary guide and "ruleset" for this project's development. All code, suggestions, and modifications must refer to the principles and roadmap outlined below.
 
 1. Project Goal
-The main goal is to build an open-source, self-hostable service that automatically creates deployment previews for Pull Requests (PRs) on GitHub or Merge Requests (MRs) on GitLab. This project prioritizes ease of use for the end-user and a simple installation process.
+The main goal is to build an open-source, self-hostable service that automatically creates deployment previews for Pull Requests (PRs) on GitHub. This project prioritizes ease of use for the end-user and a simple installation process.
 
 2. Core Principles
 Phased Focus: Follow the development roadmap phase by phase. Do not begin work on Phase 2 before Phase 1 is complete and stable.
@@ -23,12 +23,12 @@ Go as the Primary Language: The entire backend and core logic will be written in
 
 Programming Language: Go
 Git Integration:
-- GitHub: google/go-github
-- GitLab: xanzy/go-gitlab
+- Phase 1: GitHub only (google/go-github)
+- Phase 2: GitLab integration (xanzy/go-gitlab)
 
 Deployment Backend:
-- Phase 1: Docker Engine API (using the moby/moby/client SDK), Docker Compose, Traefik Proxy.
-- Phase 2: Kubernetes API (using the client-go SDK), Helm.
+- Phase 1: Docker Engine API (using the moby/moby/client SDK), Docker Compose
+- Phase 2: Kubernetes API (using the client-go SDK), Helm, Traefik Proxy
 
 4. Development Roadmap
 
@@ -37,7 +37,7 @@ Deployment Backend:
 The goal of this phase is to release a functional first version that is easy to install on a single server.
 
 - Build the Core Go Controller:
-    - Create an HTTP server to receive webhooks from GitHub/GitLab.
+    - Create an HTTP server to receive webhooks from GitHub.
     - Implement a configuration loader that reads a config.yaml file.
     - Write the main orchestration logic: receive webhook -> clone -> build -> deploy -> notify.
 
@@ -45,23 +45,27 @@ The goal of this phase is to release a functional first version that is easy to 
 - Use the official Go SDK for Docker (moby/moby/client) to interact with the Docker daemon. Avoid using os/exec to run docker CLI commands.
 - The logic must be able to:
 1. Build an image from a Dockerfile in the user's repository.
-2. Run a container from that image.
-3. Add Docker labels for automatic discovery by Traefik.
-4. Stop and remove the container when the PR/MR is closed.
+2. Run a container from that image with dynamic port allocation.
+3. Stop and remove the container when the PR is closed.
 
 - Create a docker-compose.yml File:
 
-    - This file must bundle two main services :
+    - This file must bundle the main service:
         - controller: The Go application we are building.
-        - traefik: The Traefik Proxy configured to monitor the Docker socket.
 
 - Write a Stellar README.md:
 
 This documentation is the key to the project's adoption success. It must include clear guides on:
-Prerequisites: Server requirements, having Docker & Docker Compose installed, and how to configure a wildcard DNS record (*.your-domain.com).
+Prerequisites: Server requirements, having Docker & Docker Compose installed.
 
-Git App Setup: How to create and configure a GitHub App or GitLab Application.
+GitHub App Setup: How to create and configure a GitHub App.
 
 Project Configuration: An explanation of every field in config.yaml and how to fill it out.
 
 Installation & Running: A simple docker-compose up -d instruction to start the service.
+
+**Phase 2: Enhanced Features (Future)**
+- GitLab integration
+- Traefik integration for nice URLs
+- Kubernetes support
+- Advanced routing and load balancing

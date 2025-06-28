@@ -30,6 +30,7 @@ type Sender struct {
 
 type Repository struct {
 	Id       int    `json:"id"`
+	Name     string `json:"name"`
 	CloneUrl string `json:"clone_url"`
 }
 

@@ -9,15 +9,9 @@ import (
 
 type Config struct {
 	Github GithubConfig `yaml:"github"`
-	Gitlab GitlabConfig `yaml:"gitlab"`
 }
 
 type GithubConfig struct {
-	AppID         string `yaml:"app_id"`
-	WebhookSecret string `yaml:"webhook_secret"`
-}
-
-type GitlabConfig struct {
 	AppID         string `yaml:"app_id"`
 	WebhookSecret string `yaml:"webhook_secret"`
 }

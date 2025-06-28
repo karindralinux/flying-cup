@@ -2,7 +2,3 @@
 github:
   app_id: "your-github-app-id-here"
   webhook_secret: "your-github-webhook-secret-here"
-
-gitlab:
-  app_id: "your-gitlab-app-id-here"
-  webhook_secret: "your-gitlab-webhook-secret-here"

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strconv"
 
 	"github.com/docker/docker/client"
 	"github.com/karindrlainux/flying-cup/pkg/docker"
@@ -22,9 +23,22 @@ func Cleanup(ctx context.Context, webhook *webhook.GithubPRWebhook) error {
 		return fmt.Errorf("failed to create docker client: %w", err)
 	}
 
-	// Stop & Remove Container
+	// Get container name and retrieve port from running container
+	containerName := fmt.Sprintf("pr-%s-%d", webhook.Repository.Name, webhook.Number)
 	dockerRunner := &docker.DockerRunner{Client: cli}
-	containerName := fmt.Sprintf("pr-%d", webhook.Number)
+
+	hostPortStr, err := dockerRunner.GetContainerHostPort(ctx, containerName)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve host port for container %s: %w", containerName, err)
+	}
+
+	// Release the port
+	if hostPort, err := strconv.Atoi(hostPortStr); err == nil {
+		portManager.ReleasePort(hostPort)
+		log.Printf("Released port %d for PR #%d", hostPort, webhook.Number)
+	}
+
+	// Stop & Remove Container
 	err = dockerRunner.RemoveContainerIfExists(ctx, &types.App{Name: containerName})
 
 	if err != nil {

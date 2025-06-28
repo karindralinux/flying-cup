@@ -47,10 +47,6 @@ An open-source, self-hostable service that automatically creates deployment prev
 github:
   app_id: "your-github-app-id"
   webhook_secret: "your-github-webhook-secret"
-
-gitlab:
-  app_id: "your-gitlab-app-id"
-  webhook_secret: "your-gitlab-webhook-secret"
 ```
 
 ## How It Works
