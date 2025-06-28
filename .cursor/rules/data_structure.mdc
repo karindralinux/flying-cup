@@ -1,0 +1,6 @@
+---
+description: 
+globs: data,structure,design,pattern
+alwaysApply: false
+---
+Reference all data structure / design patterns from https://refactoring.guru/ website, extract and explain it clearly

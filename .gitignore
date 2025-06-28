@@ -1,0 +1,48 @@
+# Config files with secrets
+config.yaml
+
+# Build artifacts
+flying-cup
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build cache
+*.test
+*.out
+go.work
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Repository directories
+repos/
+
+# Docker volumes
+docker-data/
+
+# Environment files
+.env
+.env.local
+.env.*.local
