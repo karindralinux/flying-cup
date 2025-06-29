@@ -20,7 +20,7 @@ func generateCodeName(webhook *webhook.GithubPRWebhook) string {
 	return fmt.Sprintf("pr-%s-%d", webhook.Repository.Name, webhook.Number)
 }
 
-func DeployPR(ctx context.Context, webhook *webhook.GithubPRWebhook) error {
+func DeployPR(ctx context.Context, webhook *webhook.GithubPRWebhook) (string, error) {
 
 	log.Printf("Starting deployment for PR #%d", webhook.Number)
 	log.Printf("Repository URL: %s", webhook.Repository.CloneUrl)
@@ -30,7 +30,7 @@ func DeployPR(ctx context.Context, webhook *webhook.GithubPRWebhook) error {
 	hostPort, err := portManager.GetAvailablePort()
 
 	if err != nil {
-		return fmt.Errorf("failed to get available port: %w", err)
+		return "", fmt.Errorf("failed to get available port: %w", err)
 	}
 	log.Printf("Using host port: %d", hostPort)
 
@@ -43,14 +43,14 @@ func DeployPR(ctx context.Context, webhook *webhook.GithubPRWebhook) error {
 
 	if err != nil {
 		portManager.ReleasePort(hostPort)
-		return fmt.Errorf("failed to clone repository: %w", err)
+		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 
 	if err != nil {
 		portManager.ReleasePort(hostPort)
-		return fmt.Errorf("failed to create docker client: %w", err)
+		return "", fmt.Errorf("failed to create docker client: %w", err)
 	}
 
 	dockerBuilder := &docker.DockerBuilder{Client: cli}
@@ -66,7 +66,7 @@ func DeployPR(ctx context.Context, webhook *webhook.GithubPRWebhook) error {
 
 	if err != nil {
 		portManager.ReleasePort(hostPort)
-		return fmt.Errorf("failed to build Docker image: %w", err)
+		return "", fmt.Errorf("failed to build Docker image: %w", err)
 	}
 
 	dockerRunner := &docker.DockerRunner{Client: cli}
@@ -75,13 +75,15 @@ func DeployPR(ctx context.Context, webhook *webhook.GithubPRWebhook) error {
 
 	if err != nil {
 		portManager.ReleasePort(hostPort)
-		return fmt.Errorf("failed to run Docker container: %w", err)
+		return "", fmt.Errorf("failed to run Docker container: %w", err)
 	}
 
 	log.Printf("Container %s started with ID %s", containerName, containerId)
 
 	log.Printf("Successfully deployed PR #%d (%s) to %s", webhook.Number, webhook.Repository.CloneUrl, containerId)
-	log.Printf("Preview available at: http://localhost:%s", fmt.Sprintf("%d", hostPort))
 
-	return nil
+	previewURL := fmt.Sprintf("http://localhost:%s", fmt.Sprintf("%d", hostPort))
+	log.Printf("Preview available at: %s", previewURL)
+
+	return previewURL, nil
 }

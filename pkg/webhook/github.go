@@ -46,8 +46,8 @@ type PullRequest struct {
 
 func HandleGithubWebhook(
 	webhookSecret string,
-	deployPR func(ctx context.Context, webhook *GithubPRWebhook) error,
-	cleanup func(ctx context.Context, webhook *GithubPRWebhook) error,
+	onPROpened func(ctx context.Context, webhook *GithubPRWebhook) error,
+	onPRClosed func(ctx context.Context, webhook *GithubPRWebhook) error,
 ) echo.HandlerFunc {
 	return func(c echo.Context) error {
 
@@ -72,61 +72,59 @@ func HandleGithubWebhook(
 
 		switch webhook.Action {
 		case "opened":
-			return handlePROpened(c, webhook, deployPR)
+			return handlePROpened(c, webhook, onPROpened)
 		case "reopened":
-			return handlePROpened(c, webhook, deployPR)
+			return handlePROpened(c, webhook, onPROpened)
 		case "closed":
-			return handlePRClosed(c, webhook, cleanup)
+			return handlePRClosed(c, webhook, onPRClosed)
 		default:
 			return c.JSON(http.StatusOK, map[string]string{"status": "ignored"})
 		}
 	}
 }
 
-func handlePRClosed(c echo.Context, webhook *GithubPRWebhook, cleanup func(ctx context.Context, webhook *GithubPRWebhook) error) error {
+func handlePRClosed(c echo.Context, webhook *GithubPRWebhook, onPRClosed func(ctx context.Context, webhook *GithubPRWebhook) error) error {
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("❌ Cleanup panic for PR #%d: %v", webhook.Number, r)
+				log.Printf("❌ Webhook handler panic for PR #%d: %v", webhook.Number, r)
 			}
 		}()
 
-		log.Printf("🚀 Starting async cleanup for PR #%d", webhook.Number)
+		log.Printf("📝 Processing PR closed event for PR #%d", webhook.Number)
 
-		err := cleanup(context.Background(), webhook)
+		err := onPRClosed(context.Background(), webhook)
 
 		if err != nil {
-			log.Printf("❌ Cleanup failed for PR #%d: %v", webhook.Number, err)
+			log.Printf("❌ PR closed handler failed for PR #%d: %v", webhook.Number, err)
 		} else {
-			log.Printf("✅ Cleanup completed for PR #%d", webhook.Number)
+			log.Printf("✅ PR closed handler completed for PR #%d", webhook.Number)
 		}
 	}()
 
-	return c.JSON(http.StatusOK, map[string]string{"status": "cleanup triggered"})
+	return c.JSON(http.StatusOK, map[string]string{"status": "handle pr closed triggered"})
 }
 
-func handlePROpened(c echo.Context, webhook *GithubPRWebhook, deployPR func(ctx context.Context, webhook *GithubPRWebhook) error) error {
+func handlePROpened(c echo.Context, webhook *GithubPRWebhook, onPROpened func(ctx context.Context, webhook *GithubPRWebhook) error) error {
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("❌ Deployment panic for PR #%d: %v", webhook.Number, r)
+				log.Printf("❌ PR opened panic for PR #%d: %v", webhook.Number, r)
 			}
 		}()
 
-		log.Printf("🚀 Starting async deployment for PR #%d", webhook.Number)
-
-		err := deployPR(context.Background(), webhook)
+		err := onPROpened(context.Background(), webhook)
 
 		if err != nil {
-			log.Printf("❌ Deployment failed for PR #%d: %v", webhook.Number, err)
+			log.Printf("❌ PR opened failed for PR #%d: %v", webhook.Number, err)
 		} else {
-			log.Printf("✅ Deployment completed for PR #%d", webhook.Number)
+			log.Printf("✅ PR opened completed for PR #%d", webhook.Number)
 		}
 	}()
 
-	return c.JSON(http.StatusOK, map[string]string{"status": "deployment triggered"})
+	return c.JSON(http.StatusOK, map[string]string{"status": "handle pr opened triggered"})
 }
 
 func parseWebhook(body []byte) (*GithubPRWebhook, error) {
