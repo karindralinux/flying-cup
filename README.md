@@ -1,6 +1,24 @@
 # Flying Cup
 
-A preview deployment PaaS system for GitHub Pull Request previews using Traefik.
+A preview deployment PaaS system for GitHub Pull Request previews using Docker Container.
+
+
+## Requirements
+
+Flying Cup is designed to run entirely on Docker. Please ensure the following before you begin:
+
+- **Docker Engine**: Installed and running on your server or development machine. [Get Docker](https://docs.docker.com/get-docker/)
+- **docker-compose**: Installed (if not included with your Docker installation). [Get docker-compose](https://docs.docker.com/compose/install/)
+- **Minimum System Resources**:
+  - **Memory**: At least 2 GB RAM (4 GB recommended for multiple concurrent PRs)
+  - **Storage**: At least 2 GB free disk space (more required for large repositories or many deployments)
+- **Network**: Publicly accessible IP address and open ports (default: 80 for web, 9000 for Traefik dashboard)
+- **Repository Requirements**:
+  - The application repository you want to deploy **must include a valid `Dockerfile`** at its root or project directory. Flying Cup will use this Dockerfile to build and run preview containers.
+  - See the [`example/`](./example) directory in this repository for sample apps (Node.js and Go) that meet this requirement.
+
+> ⚠️ **Note:** Flying Cup will not work with repositories that do not have a Dockerfile. Please ensure your app is containerized before using this system.
+
 
 ## Features
 
