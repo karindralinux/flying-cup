@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
 
@@ -16,8 +17,50 @@ type DockerRunner struct {
 	Client *client.Client
 }
 
-func (d *DockerRunner) RunContainer(ctx context.Context, app *sharedTypes.App, imageTag, containerName string) (string, error) {
+// RunContainerWithTraefik runs a container with Traefik integration
+func (d *DockerRunner) RunContainerWithTraefik(ctx context.Context, app *sharedTypes.App, imageTag, containerName string, labels map[string]string) (string, error) {
+	containerPortBind := fmt.Sprintf("%s/tcp", app.ContainerPort)
 
+	containerConfig := &container.Config{
+		Image:  imageTag,
+		Labels: labels,
+		ExposedPorts: map[nat.Port]struct{}{
+			nat.Port(containerPortBind): {},
+		},
+	}
+
+	hostConfig := &container.HostConfig{
+		// No PortBindings needed - Traefik handles routing
+		NetworkMode: "web", // Explicitly attach to the traefik network
+		RestartPolicy: container.RestartPolicy{
+			Name: "unless-stopped",
+		},
+		AutoRemove: false, // Don't auto-remove for PR deployments
+	}
+
+	// Remove existing container if it exists
+	d.RemoveContainerIfExists(ctx, app)
+
+	// Create container
+	resp, err := d.Client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
+	if err != nil {
+		return "", fmt.Errorf("failed to create container: %w", err)
+	}
+
+	// Start container
+	err = d.Client.ContainerStart(ctx, resp.ID, container.StartOptions{})
+	if err != nil {
+		// Cleanup on failure
+		d.Client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+		return "", fmt.Errorf("failed to start container: %w", err)
+	}
+
+	fmt.Printf("✅ Container %s started with ID %s\n", containerName, resp.ID)
+	return resp.ID, nil
+}
+
+// RunContainer runs a container (legacy method for backward compatibility)
+func (d *DockerRunner) RunContainer(ctx context.Context, app *sharedTypes.App, imageTag, containerName string) (string, error) {
 	containerPortBind := fmt.Sprintf("%s/tcp", app.ContainerPort)
 
 	containerConfig := &container.Config{
@@ -28,14 +71,7 @@ func (d *DockerRunner) RunContainer(ctx context.Context, app *sharedTypes.App, i
 	}
 
 	hostConfig := &container.HostConfig{
-		PortBindings: nat.PortMap{
-			nat.Port(containerPortBind): []nat.PortBinding{
-				{
-					HostIP:   "0.0.0.0",
-					HostPort: app.HostPort,
-				},
-			},
-		},
+		// No PortBindings needed - use internal container port
 		AutoRemove: true,
 	}
 
@@ -56,44 +92,68 @@ func (d *DockerRunner) RunContainer(ctx context.Context, app *sharedTypes.App, i
 	return resp.ID, nil
 }
 
-func (d *DockerRunner) RemoveContainerIfExists(ctx context.Context, app *sharedTypes.App) error {
+// StopAndRemoveContainer stops and removes a container by ID
+func (d *DockerRunner) StopAndRemoveContainer(ctx context.Context, containerID string) error {
+	// Stop the container
+	if err := d.Client.ContainerStop(ctx, containerID, container.StopOptions{}); err != nil {
+		fmt.Printf("⚠️  Warning: failed to stop container %s: %v\n", containerID, err)
+	}
 
-	containers, err := d.Client.ContainerList(ctx, container.ListOptions{})
+	// Remove the container
+	if err := d.Client.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
+		return fmt.Errorf("failed to remove container: %w", err)
+	}
+
+	fmt.Printf("✅ Container stopped and removed: %s\n", containerID)
+	return nil
+}
+
+// RemoveContainerIfExists removes a container if it exists
+func (d *DockerRunner) RemoveContainerIfExists(ctx context.Context, app *sharedTypes.App) error {
+	containers, err := d.Client.ContainerList(ctx, container.ListOptions{All: true})
 
 	if err != nil {
 		return fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	fmt.Println("Containers:")
 	for _, c := range containers {
-		fmt.Println(c.Names[0])
-		if c.Names[0] == "/"+app.Name {
-			err = d.Client.ContainerStop(ctx, c.ID, container.StopOptions{})
+		for _, name := range c.Names {
+			if name == "/"+app.Name {
+				fmt.Printf("🧹 Removing existing container: %s\n", name)
 
-			if err != nil {
-				return fmt.Errorf("failed to stop and remove container: %w", err)
-			}
+				// Stop the container
+				if err := d.Client.ContainerStop(ctx, c.ID, container.StopOptions{}); err != nil {
+					fmt.Printf("⚠️  Warning: failed to stop container %s: %v\n", c.ID, err)
+				}
 
-			// Simple wait - check every second for 10 seconds
-			for i := 0; i < 10; i++ {
-				time.Sleep(1 * time.Second)
+				// Remove the container
+				if err := d.Client.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true}); err != nil {
+					return fmt.Errorf("failed to remove container: %w", err)
+				}
 
-				// Check if container still exists
-				containers, _ := d.Client.ContainerList(ctx, container.ListOptions{All: true})
-				exists := false
-				for _, c2 := range containers {
-					for _, name2 := range c2.Names {
-						if name2 == "/"+app.Name {
-							exists = true
-							break
+				// Wait for container to be fully removed
+				for i := 0; i < 10; i++ {
+					time.Sleep(1 * time.Second)
+
+					// Check if container still exists
+					containers, _ := d.Client.ContainerList(ctx, container.ListOptions{All: true})
+					exists := false
+					for _, c2 := range containers {
+						for _, name2 := range c2.Names {
+							if name2 == "/"+app.Name {
+								exists = true
+								break
+							}
 						}
+					}
+
+					if !exists {
+						fmt.Printf("✅ Container removed: %s\n", name)
+						return nil
 					}
 				}
 
-				if !exists {
-					fmt.Printf("✅ Container removed: %s\n", "/preview-"+app.Name)
-					return nil
-				}
+				return fmt.Errorf("timeout waiting for container removal: %s", name)
 			}
 		}
 	}
@@ -101,34 +161,12 @@ func (d *DockerRunner) RemoveContainerIfExists(ctx context.Context, app *sharedT
 	return nil
 }
 
-// GetContainerHostPort retrieves the host port from running container
-func (d *DockerRunner) GetContainerHostPort(ctx context.Context, containerName string) (string, error) {
-	containers, err := d.Client.ContainerList(ctx, container.ListOptions{})
-	if err != nil {
-		return "", fmt.Errorf("failed to list containers: %w", err)
-	}
+// ListContainers lists all containers with optional filtering
+func (d *DockerRunner) ListContainers(ctx context.Context, all bool) ([]types.Container, error) {
+	return d.Client.ContainerList(ctx, container.ListOptions{All: all})
+}
 
-	for _, container := range containers {
-		for _, name := range container.Names {
-			if name == "/"+containerName {
-				// Get container details to see port bindings
-				containerInfo, err := d.Client.ContainerInspect(ctx, container.ID)
-				if err != nil {
-					return "", fmt.Errorf("failed to inspect container: %w", err)
-				}
-
-				// Check port bindings
-				for containerPort, bindings := range containerInfo.NetworkSettings.Ports {
-					if len(bindings) > 0 {
-						fmt.Printf("Found port binding: %s -> %s\n", containerPort, bindings[0].HostPort)
-						return bindings[0].HostPort, nil
-					}
-				}
-
-				return "", fmt.Errorf("no port bindings found for container")
-			}
-		}
-	}
-
-	return "", fmt.Errorf("container not found: %s", containerName)
+// GetContainerInfo gets detailed information about a container
+func (d *DockerRunner) GetContainerInfo(ctx context.Context, containerID string) (container.InspectResponse, error) {
+	return d.Client.ContainerInspect(ctx, containerID)
 }

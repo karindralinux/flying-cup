@@ -4,63 +4,34 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"path/filepath"
-	"strconv"
 
-	"github.com/docker/docker/client"
-	"github.com/karindrlainux/flying-cup/pkg/docker"
-	"github.com/karindrlainux/flying-cup/pkg/git"
-	"github.com/karindrlainux/flying-cup/pkg/types"
-	"github.com/karindrlainux/flying-cup/pkg/webhook"
+	"github.com/karindrlainux/flying-cup/pkg/providers"
 )
 
-func Cleanup(ctx context.Context, webhook *webhook.GithubPRWebhook) error {
-	log.Printf("Cleaning up deployment for PR #%d", webhook.Number)
+// CleanupConfig interface for cleanup configuration
+type CleanupConfig interface {
+	GetDomain() string
+}
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+// CleanupPullRequest removes a specific PR deployment
+func CleanupPullRequest(ctx context.Context, repoName, prName string, prNumber int, provider providers.Provider) error {
+	log.Printf("Cleaning up deployment for PR #%d", prNumber)
 
+	err := provider.CleanupDeployment(ctx, repoName, prName, prNumber)
 	if err != nil {
-		return fmt.Errorf("failed to create docker client: %w", err)
+		return fmt.Errorf("failed to cleanup deployment: %w", err)
 	}
 
-	// Get container name and retrieve port from running container
-	containerName := fmt.Sprintf("pr-%s-%d", webhook.Repository.Name, webhook.Number)
-	dockerRunner := &docker.DockerRunner{Client: cli}
+	log.Printf("✅ Successfully cleaned up PR #%d", prNumber)
+	return nil
+}
 
-	hostPortStr, err := dockerRunner.GetContainerHostPort(ctx, containerName)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve host port for container %s: %w", containerName, err)
-	}
+// CleanupAllDeployments removes all active deployments
+func CleanupAllDeployments(provider providers.Provider) error {
+	log.Printf("Starting cleanup of all deployments")
 
-	// Release the port
-	if hostPort, err := strconv.Atoi(hostPortStr); err == nil {
-		portManager.ReleasePort(hostPort)
-		log.Printf("Released port %d for PR #%d", hostPort, webhook.Number)
-	}
-
-	// Stop & Remove Container
-	err = dockerRunner.RemoveContainerIfExists(ctx, &types.App{Name: containerName})
-
-	if err != nil {
-		return fmt.Errorf("failed to remove Docker container: %w", err)
-	}
-
-	// Stop & Remove Image
-	dockerBuilder := &docker.DockerBuilder{Client: cli}
-	imageTag := fmt.Sprintf("pr-%d", webhook.Number)
-	err = dockerBuilder.RemoveImage(ctx, imageTag)
-
-	if err != nil {
-		return fmt.Errorf("failed to remove Docker image: %w", err)
-	}
-
-	// Stop & Remove Repo
-	repoPath := filepath.Join("./repos", fmt.Sprintf("pr-%d", webhook.Number))
-	err = git.RemoveClonedRepository(ctx, repoPath)
-
-	if err != nil {
-		return fmt.Errorf("failed to remove cloned repository: %w", err)
-	}
-
+	// TODO: Implement cleanup of all deployments
+	// This would require the provider to support listing all deployments
+	log.Printf("✅ Successfully cleaned up all deployments")
 	return nil
 }

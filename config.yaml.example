@@ -1,7 +1,0 @@
-# config.yaml.example
-server:
-  environtment: "local"
-  base_url: "https://www.your-domain.com"
-github:
-  app_id: "your-github-app-id-here"
-  webhook_secret: "your-github-webhook-secret-here"

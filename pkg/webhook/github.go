@@ -59,6 +59,8 @@ func HandleGithubWebhook(
 
 		signature := c.Request().Header.Get("X-Hub-Signature-256")
 
+		fmt.Println(c.Request().Header)
+
 		if err := validateSignature(body, signature, webhookSecret); err != nil {
 			return c.String(http.StatusUnauthorized, "Invalid signature")
 		}

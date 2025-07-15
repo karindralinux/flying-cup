@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 
 	"github.com/docker/docker/client"
 	"github.com/karindrlainux/flying-cup/pkg/deployment"
 	"github.com/karindrlainux/flying-cup/pkg/notification"
+	"github.com/karindrlainux/flying-cup/pkg/providers"
 	"github.com/karindrlainux/flying-cup/pkg/webhook"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -20,13 +22,17 @@ func init() {
 }
 
 func main() {
-	e := echo.New()
+	log.Println("🚀 Starting Flying Cup...")
 
-	config, err := LoadConfig("config.yaml")
-
+	// Load config from environment variables
+	config, err := LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatal("Failed to load config:", err)
 	}
+
+	checkSystemRequirements()
+
+	e := echo.New()
 
 	notifier := notification.NewGithubNotifier(config.Github.Token)
 
@@ -37,6 +43,27 @@ func main() {
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
 		AllowMethods: []string{echo.GET, echo.HEAD, echo.PUT, echo.PATCH, echo.POST, echo.DELETE},
 	}))
+
+	e.GET("/health", func(c echo.Context) error {
+		return c.String(http.StatusOK, "OK")
+	})
+
+	// Create deployment provider based on config
+	deploymentConfig := &providers.Config{
+		Domain:      config.Server.Domain,
+		Port:        config.Server.Port,
+		Environment: config.Server.Environment,
+	}
+
+	provider, err := providers.NewProvider(providers.TypeTraefik, deploymentConfig)
+	if err != nil {
+		log.Fatal("Failed to create deployment provider:", err)
+	}
+
+	// Initialize provider
+	if err := provider.Init(config); err != nil {
+		log.Fatal("Failed to initialize deployment provider:", err)
+	}
 
 	e.POST("/webhook/github", webhook.HandleGithubWebhook(
 		config.Github.WebhookSecret,
@@ -50,7 +77,8 @@ func main() {
 			log.Printf("   - PR Title: %s", webhook.PullRequest.Title)
 			log.Printf("   - Author: %s", webhook.Sender.Username)
 
-			previewURL, err := deployment.DeployPR(ctx, webhook)
+			// Use the provider-agnostic DeployPR function
+			previewURL, err := deployment.DeployPullRequest(ctx, webhook, provider)
 
 			if err != nil {
 				log.Printf("❌ Error deploying PR #%d: %v", webhook.Number, err)
@@ -89,7 +117,7 @@ func main() {
 			log.Printf("   - Repository: %s", webhook.Repository.Name)
 			log.Printf("   - PR: #%d", webhook.Number)
 
-			err := deployment.Cleanup(ctx, webhook)
+			err := deployment.CleanupPullRequest(ctx, webhook.Repository.Name, webhook.PullRequest.Title, webhook.Number, provider)
 
 			if err != nil {
 				log.Printf("❌ Error cleaning up deployment for PR #%d (%s): %v", webhook.Number, webhook.Repository.Name, err)
@@ -111,7 +139,7 @@ func main() {
 		},
 	))
 
-	e.Logger.Fatal(e.Start(":8080"))
+	e.Logger.Fatal(e.Start(fmt.Sprintf(":%d", 8080))) // Use internal port 8080
 }
 
 func createDeploymentFailureComment(webhook *webhook.GithubPRWebhook, errorMessage string) string {
@@ -199,4 +227,6 @@ func checkSystemRequirements() {
 	log.Println("Docker is running ✅")
 
 	log.Println("All system requirements checked ✅")
+	log.Println("🌐 Traefik will handle SSL certificates automatically via Let's Encrypt")
+	log.Println("📋 Make sure your DNS points *.preview.ngodingo.web.id to this server")
 }

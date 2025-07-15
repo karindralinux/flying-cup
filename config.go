@@ -3,51 +3,82 @@ package main
 import (
 	"fmt"
 	"os"
-
-	"gopkg.in/yaml.v3"
+	"strconv"
 )
 
 type Config struct {
-	Server ServerConfig `yaml:"server"`
-	Github GithubConfig `yaml:"github"`
+	Server ServerConfig
+	Github GithubConfig
 }
 
 type ServerConfig struct {
-	Environment string `yaml:"environment"`
-	BaseURL string `yaml:"base_url"`
+	Environment string
+	Domain      string
+	Port        int
 }
 
 type GithubConfig struct {
-	AppID         string `yaml:"app_id"`
-	WebhookSecret string `yaml:"webhook_secret"`
-	Token         string `yaml:"token"`
+	AppID         string
+	WebhookSecret string
+	Token         string
 }
 
-func LoadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-
-	if err != nil {
-		return nil, err
+func LoadConfig() (*Config, error) {
+	config := &Config{
+		Server: ServerConfig{
+			Environment: getEnv("ENVIRONMENT", "local"),
+			Domain:      getEnv("DOMAIN", "localhost"),
+			Port:        getEnvAsInt("PORT", 80),
+		},
+		Github: GithubConfig{
+			AppID:         getEnv("GITHUB_APP_ID", ""),
+			WebhookSecret: getEnv("GITHUB_WEBHOOK_SECRET", ""),
+			Token:         getEnv("GITHUB_TOKEN", ""),
+		},
 	}
 
-	var config Config
-	err = yaml.Unmarshal(data, &config)
-
-	if config.Server.BaseURL == "" {
-		return nil, fmt.Errorf("server base url is required")
-	}
-
-	if config.Server.Environment == "" || config.Server.Environment == "local" {
-		config.Server.BaseURL = "http://localhost"
-	}
-
+	// Validate required fields
 	if config.Github.WebhookSecret == "" {
-		return nil, fmt.Errorf("github webhook secret is required")
+		return nil, fmt.Errorf("GITHUB_WEBHOOK_SECRET is required")
 	}
 
 	if config.Github.Token == "" {
-		return nil, fmt.Errorf("github token is required")
+		return nil, fmt.Errorf("GITHUB_TOKEN is required")
 	}
 
-	return &config, err
+	if config.Server.Domain == "" {
+		return nil, fmt.Errorf("DOMAIN is required")
+	}
+
+	return config, nil
+}
+
+// Helper functions for environment variables
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+// Domain getter method
+func (c *Config) GetDomain() string {
+	return c.Server.Domain
+}
+
+// GetProtocol returns http or https based on environment
+func (c *Config) GetProtocol() string {
+	if c.Server.Environment == "local" {
+		return "http"
+	}
+	return "https"
 }

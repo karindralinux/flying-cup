@@ -1,68 +1,254 @@
-# Flying Cup - Preview Deployment PaaS (On Progress)
+# Flying Cup
 
-An open-source, self-hostable service that automatically creates deployment previews for Pull Requests on GitHub.
+A preview deployment PaaS system for GitHub Pull Request previews using Traefik.
 
 ## Features
 
-- 🚀 **Automatic PR Deployment** - Deploy previews when PRs are opened
-- 🧹 **Automatic Cleanup** - Remove previews when PRs are closed
-- �� **Docker-based** - Uses Docker for consistent deployments
-
-## Prerequisites
-
-- Docker and Docker Compose installed
-- Go 1.21+ (for development)
-- GitHub repository with webhook access
+- Automatic GitHub webhook handling for PR events
+- Traefik integration for secure preview URLs with automatic SSL
+- Docker-based deployment with Traefik routing
+- Automatic cleanup of preview deployments
+- Environment-based configuration (HTTP for local, HTTPS for production)
 
 ## Quick Start
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-username/flying-cup.git
-   cd flying-cup
-   ```
+### 1. Setup
 
-2. **Configure the application:**
-   ```bash
-   cp config.yaml.example config.yaml
-   # Edit config.yaml with your GitHub webhook secret
-   ```
+```bash
+# Clone the repository
+git clone <repository-url>
+cd flying-cup
 
-3. **Run the application:**
-   ```bash
-   go run main.go config.go
-   ```
+# Run setup script
+chmod +x setup.sh
+./setup.sh
 
-4. **Set up GitHub webhook:**
-   - Go to your repository settings
-   - Add webhook URL: `http://your-server:8080/webhook/github`
-   - Set content type to `application/x-www-form-urlencoded`
-   - Add your webhook secret
-
-## Configuration
-
-### config.yaml
-
-```yaml
-github:
-  app_id: "your-github-app-id"
-  webhook_secret: "your-github-webhook-secret"
+# Edit configuration
+nano .env
 ```
 
-## How It Works
+### 2. Configuration
 
-1. **PR Opened** → GitHub sends webhook → Flying Cup clones repository → Builds Docker image → Deploys container → Preview available
-2. **PR Closed** → GitHub sends webhook → Flying Cup stops container → Removes container and image → Cleans up repository
+Edit the `.env` file with your settings:
+
+```bash
+# Environment (local/staging/production)
+ENVIRONMENT=local
+
+# Domain for PR previews
+DOMAIN=preview.ngodingo.web.id
+
+# GitHub Configuration
+GITHUB_APP_ID=your-github-app-id
+GITHUB_WEBHOOK_SECRET=your-webhook-secret
+GITHUB_TOKEN=your-github-token
+
+# Ports Configuration
+PORT=80
+DASHBOARD_PORT=9000
+```
+
+### 3. Start Services
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f
+```
+
+### 4. Access Points
+
+- **Traefik Dashboard**: `http://localhost:9000`
+- **Flying Cup Controller**: `http://localhost`
+- **PR Previews**: `https://{repo}-{pr}-{number}.{your-domain}`
+
+## Architecture
+
+### Services
+
+1. **Controller**: Flying Cup main application
+   - Handles GitHub webhooks
+   - Manages PR deployments
+   - No external port exposure (routed through Traefik)
+
+2. **Traefik**: Reverse proxy and load balancer
+   - Handles all external traffic
+   - Automatic SSL certificates
+   - Routes to appropriate containers
+
+### Network Flow
+
+```
+Internet → Traefik (Port 80/443) → Controller (Internal)
+         → Traefik (Port 80/443) → PR Containers (Internal)
+```
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENVIRONMENT` | `local` | Environment (local/staging/production) |
+| `DOMAIN` | `preview.ngodingo.web.id` | Domain for PR previews |
+| `GITHUB_APP_ID` | - | GitHub App ID |
+| `GITHUB_WEBHOOK_SECRET` | - | GitHub webhook secret |
+| `GITHUB_TOKEN` | - | GitHub personal access token |
+| `PORT` | `80` | Port for web traffic |
+| `DASHBOARD_PORT` | `9000` | Port for Traefik dashboard |
+
+### Example .env file
+
+```bash
+# Production setup
+ENVIRONMENT=production
+DOMAIN=preview.mycompany.com
+PORT=80
+DASHBOARD_PORT=9000
+
+# Development setup
+ENVIRONMENT=local
+DOMAIN=localhost
+PORT=8080
+DASHBOARD_PORT=9000
+```
+
+## DNS Setup
+
+For production, configure your DNS with wildcard records:
+
+```
+*.preview.ngodingo.web.id  A  YOUR_SERVER_IP
+preview.ngodingo.web.id    A  YOUR_SERVER_IP
+```
 
 ## Development
 
 ```bash
-# Run locally
-go run main.go config.go
+# Run locally with environment variables
+export $(cat .env | xargs)
+go run .
 
-# Build binary
-go build -o flying-cup
+# Or run with docker-compose
+docker-compose up -d
+
+# Check service status
+docker-compose ps
+
+# View logs
+docker-compose logs controller
+docker-compose logs traefik
 ```
+
+## Preview URL Format
+
+PR preview URLs follow this format:
+```
+{protocol}://{repo-name}-{pr-title}-{pr-number}.{domain}
+```
+
+### Examples:
+
+**Local Development:**
+```
+http://myapp-feature-login-123.localhost
+```
+
+**Production:**
+```
+https://myapp-feature-login-123.preview.ngodingo.web.id
+```
+
+## GitHub Webhook Setup
+
+1. **Create GitHub App** or use Personal Access Token
+2. **Configure Webhook** in your repository:
+   - URL: `https://your-domain/webhook/github`
+   - Content type: `application/x-www-form-urlencoded`
+   - Events: `Pull requests`
+   - Secret: Use the same value as `GITHUB_WEBHOOK_SECRET`
+
+3. **Set Webhook Secret** in your `.env` file
+
+## Troubleshooting
+
+### Check Configuration
+
+```bash
+# Verify environment variables are loaded
+docker-compose exec controller env | grep -E "(ENVIRONMENT|DOMAIN|GITHUB_)"
+
+# Check logs
+docker-compose logs controller
+docker-compose logs traefik
+```
+
+### Port Conflicts
+
+If you encounter port conflicts, modify the `.env` file:
+
+```bash
+# Use different ports
+PORT=8080
+DASHBOARD_PORT=9001
+```
+
+### Check Traefik Dashboard
+
+Access the Traefik dashboard to see routing configuration:
+- URL: `http://localhost:9000` (or your configured dashboard port)
+- Shows all active routes and services
+
+### Verify DNS
+
+Test your DNS configuration:
+```bash
+# Test wildcard DNS
+nslookup test.preview.ngodingo.web.id
+
+# Test main domain
+nslookup preview.ngodingo.web.id
+```
+
+### Common Issues
+
+1. **Webhook 401 errors**: Check `GITHUB_WEBHOOK_SECRET` matches GitHub webhook configuration
+2. **Container not found**: Ensure Docker is running and web network exists
+3. **Preview not accessible**: Check Traefik dashboard for routing issues
+4. **SSL errors**: Verify DNS points to your server and Let's Encrypt can reach it
+
+## Environment-Specific Configuration
+
+### Local Development
+```bash
+ENVIRONMENT=local
+DOMAIN=localhost
+PORT=8080
+# Results in: http://repo-pr-title-123.localhost
+```
+
+### Staging
+```bash
+ENVIRONMENT=staging
+DOMAIN=staging.preview.ngodingo.web.id
+PORT=80
+# Results in: https://repo-pr-title-123.staging.preview.ngodingo.web.id
+```
+
+### Production
+```bash
+ENVIRONMENT=production
+DOMAIN=preview.ngodingo.web.id
+PORT=80
+# Results in: https://repo-pr-title-123.preview.ngodingo.web.id
+```
+
+## Security Considerations
+
+- **Webhook Secret**: Always use a strong, unique webhook secret
+- **GitHub Token**: Use GitHub App tokens instead of personal access tokens when possible
+- **Environment Variables**: Never commit `.env` files to version control
+- **Network Security**: Ensure Traefik dashboard is not publicly accessible in production
 
 ## License
 

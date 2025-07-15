@@ -1,15 +1,63 @@
 version: "3.8"
 
 services:
-  main:
+  # Main Flying Cup controller service
+  controller:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: flying-cup
+    container_name: flying-cup-controller
     restart: always
-    ports:
-      - 8080:8080
+    # No external port mapping - Traefik handles routing
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./repos:/app/repos
-      - ./config.yaml:/app/config.yaml:ro
+      - ./.env:/app/.env:ro
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.controller.rule=Host(`localhost`)"
+      - "traefik.http.routers.controller.entrypoints=web"
+      - "traefik.http.services.controller.loadbalancer.server.port=8080"
+      # Webhook router for /webhook/github
+      - "traefik.http.routers.webhook.rule=Path(`/webhook/github`)"
+      - "traefik.http.routers.webhook.entrypoints=web"
+      - "traefik.http.routers.webhook.service=controller"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-local}
+      - DOMAIN=${DOMAIN}
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+
+  # Traefik reverse proxy
+  traefik:
+    image: "traefik:v2.10"
+    container_name: "traefik"
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=web"
+      - "--entrypoints.web.address=:${PORT:-80}"
+      - "--log.level=INFO"
+    ports:
+      - "${PORT:-80}:${PORT:-80}"  # Web traffic port
+      - "${DASHBOARD_PORT:-9000}:8080"  # Dashboard port
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+
+networks:
+  web:
+    driver: bridge
+    name: web
+    external: false
